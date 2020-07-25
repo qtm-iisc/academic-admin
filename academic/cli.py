@@ -133,9 +133,10 @@ def parse_bibtex_entry(entry, pub_dir="publication", featured=False, overwrite=F
     """Parse a bibtex entry and generate corresponding publication bundle"""
     log.info(f"Parsing entry {entry['ID']}")
 
-    bundle_path = f"content/{pub_dir}/{slugify(entry['ID'])}"
-    markdown_path = os.path.join(bundle_path, "index.md")
-    cite_path = os.path.join(bundle_path, "cite.bib")
+    bundle_path = f"content/{pub_dir}"
+    bundle_path2 = f"static/bib/{pub_dir}"
+    markdown_path = os.path.join(bundle_path, f"{slugify(entry['ID'])}.md")
+    cite_path = os.path.join(bundle_path2, f"{slugify(entry['ID'])}.bib")
     date = datetime.utcnow()
     timestamp = date.isoformat("T") + "Z"  # RFC 3339 timestamp.
 
@@ -148,6 +149,9 @@ def parse_bibtex_entry(entry, pub_dir="publication", featured=False, overwrite=F
     log.info(f"Creating folder {bundle_path}")
     if not dry_run:
         Path(bundle_path).mkdir(parents=True, exist_ok=True)
+    log.info(f"Creating folder {bundle_path2}")
+    if not dry_run:
+        Path(bundle_path2).mkdir(parents=True, exist_ok=True)
 
     # Save citation file.
     log.info(f"Saving citation to {cite_path}")
@@ -159,8 +163,8 @@ def parse_bibtex_entry(entry, pub_dir="publication", featured=False, overwrite=F
             f.write(writer.write(db))
 
     # Prepare YAML front matter for Markdown file.
-    frontmatter = ["---"]
-    frontmatter.append(f'title: "{clean_bibtex_str(entry["title"])}"')
+    frontmatter = ["+++"]
+    frontmatter.append(f'title = "{clean_bibtex_str(entry["title"])}"')
     year = ""
     month = "01"
     day = "01"
@@ -178,9 +182,60 @@ def parse_bibtex_entry(entry, pub_dir="publication", featured=False, overwrite=F
         year = entry["year"]
     if len(year) == 0:
         log.error(f'Invalid date for entry `{entry["ID"]}`.')
-    frontmatter.append(f"date: {year}-{month}-{day}")
+    frontmatter.append(f"date =  {year}-{month}-{day}")
 
-    frontmatter.append(f"publishDate: {timestamp}")
+    frontmatter.append(f"publishDate = {timestamp}")
+
+
+    frontmatter.append(f'publication_types =  ["{PUB_TYPES.get(entry["ENTRYTYPE"], 0)}"]')
+
+    abstract_file = cite_path = os.path.join(bundle_path2, f"{slugify(entry['ID'])}.abs")
+    if "abstract" in entry:
+        frontmatter.append(f'abstract =  "{clean_bibtex_str(entry["abstract"])}"')
+    elif os.path.exists(abstract_file):
+        _abstract = ''.join(open(abstract_file, 'r').readlines()).rstrip("\n")
+        log.info(f"{clean_abstract_str(_abstract)}")
+        frontmatter.append(f'abstract = "{clean_abstract_str(_abstract)}"')
+    else:
+        frontmatter.append('abstract =  ""')
+
+    frontmatter.append(f"selected = {str(featured).lower()}")
+
+    vol = ""
+    if "volume" in entry:
+        vol = entry["volume"]
+    pages = ""
+    if "pages" in entry:
+        pages = entry["pages"]
+
+    # Publication name.
+    if "booktitle" in entry:
+        frontmatter.append(f'publication = "*{clean_bibtex_str(entry["booktitle"])}*"')
+    elif "journal" in entry:
+        if len(vol) == 0:
+             frontmatter.append(f'publication = "{clean_bibtex_str(entry["journal"])} {pages} ({year})."')
+        else:
+             frontmatter.append(f'publication = "{clean_bibtex_str(entry["journal"])} **{vol}**, {pages} ({year})."')
+    elif "publisher" in entry:
+        frontmatter.append(f'publication = "*{clean_bibtex_str(entry["publisher"])}*"')
+    else:
+        frontmatter.append('publication =  ""')
+
+    if "keywords" in entry:
+        frontmatter.append(f'tags: [{clean_bibtex_tags(entry["keywords"], normalize)}]')
+
+    if "url" in entry:
+        frontmatter.append(f'url_url =  "{clean_bibtex_str(entry["url"])}"')
+
+    if "doi" in entry:
+        frontmatter.append(f'url_doi =  "https://doi.org/{entry["doi"]}"')
+
+    if "pdf" in entry:
+        frontmatter.append(f'url_pdf =  "pdf/publication/{entry["pdf"]}"')
+
+    # Add a link to the bib file 
+    frontmatter.append(f'url_bib =  "bib/publication/{slugify(entry["ID"])}.bib"')
+
 
     authors = None
     if "author" in entry:
@@ -189,37 +244,14 @@ def parse_bibtex_entry(entry, pub_dir="publication", featured=False, overwrite=F
         authors = entry["editor"]
     if authors:
         authors = clean_bibtex_authors([i.strip() for i in authors.replace("\n", " ").split(" and ")])
-        frontmatter.append(f"authors: [{', '.join(authors)}]")
+        frontmatter.append(f"")
+        for a in authors:
+            frontmatter.append(f"[[authors]]")
+            frontmatter.append(f"    name = {a}")
+            frontmatter.append(f"    is_member = false")
+            frontmatter.append(f"    link = \"\"\n")
 
-    frontmatter.append(f'publication_types: ["{PUB_TYPES.get(entry["ENTRYTYPE"], 0)}"]')
-
-    if "abstract" in entry:
-        frontmatter.append(f'abstract: "{clean_bibtex_str(entry["abstract"])}"')
-    else:
-        frontmatter.append('abstract: ""')
-
-    frontmatter.append(f"featured: {str(featured).lower()}")
-
-    # Publication name.
-    if "booktitle" in entry:
-        frontmatter.append(f'publication: "*{clean_bibtex_str(entry["booktitle"])}*"')
-    elif "journal" in entry:
-        frontmatter.append(f'publication: "*{clean_bibtex_str(entry["journal"])}*"')
-    elif "publisher" in entry:
-        frontmatter.append(f'publication: "*{clean_bibtex_str(entry["publisher"])}*"')
-    else:
-        frontmatter.append('publication: ""')
-
-    if "keywords" in entry:
-        frontmatter.append(f'tags: [{clean_bibtex_tags(entry["keywords"], normalize)}]')
-
-    if "url" in entry:
-        frontmatter.append(f'url_pdf: "{clean_bibtex_str(entry["url"])}"')
-
-    if "doi" in entry:
-        frontmatter.append(f'doi: "{entry["doi"]}"')
-
-    frontmatter.append("---\n\n")
+    frontmatter.append("+++\n\n")
 
     # Save Markdown file.
     try:
@@ -279,8 +311,71 @@ def clean_bibtex_str(s):
     s = s.replace('"', '\\"')
     s = s.replace("{", "").replace("}", "")
     s = s.replace("\t", " ").replace("\n", " ").replace("\r", "")
+    #Ugly hack
+    s = s.replace("1-x","{1-x}")
     return s
 
+def clean_abstract_str(s):
+    """Clean BibTeX string and escape TOML special characters"""
+    s = s.replace("{\\em ab initio}", "*ab initio*")
+    s = s.replace("{\\em Ab initio}", "*Ab initio*")
+    s = s.replace("{\\em all}", "*all*")
+    s = s.replace("{\\em effective}", "*effective*")
+    s = s.replace("\\texttt{BerkeleyGW}", "<TT>BerkeleyGW</TT>")
+    s = s.replace("\\texttt{PARATEC}", "<TT>PARATEC</TT>")
+    s = s.replace("\\texttt{PARSEC}", "<TT>PARSEC</TT>")
+    s = s.replace("\\texttt{Quantum ESPRESSO}", "<TT>Quantum ESPRESSO</TT>")
+    s = s.replace("\\texttt{SIESTA}", "<TT>SIESTA</TT>")
+    s = s.replace("\\texttt{Octopus}", "<TT>Octopus</TT>")
+    s = s.replace("$\\lesssim$", "&le;")
+    s = s.replace("$\\propto$", "&prop;")
+    s = s.replace("$\\times$", "&times;")
+    s = s.replace("$\\sim$", "&sim;")
+    s = s.replace("$\\rightarrow$", "&rarr;")
+    s = s.replace("$\\tau_", "&tau;$_")
+    s = s.replace("$\\pi$", "&pi;")
+    s = s.replace("$\\mu$", "&micro;")
+    s = s.replace("$\\rho$", "&rho;")
+    s = s.replace("$\\theta$", "&theta;")
+    s = s.replace("$\\alpha$", "&alpha;")
+    s = s.replace("$\\beta$", "&beta;")
+    s = s.replace("$\\Gamma$", "&Gamma;")
+    s = s.replace("$\\gamma$", "&gamma;")
+    s = s.replace("$\\Sigma$", "&Sigma;")
+    s = s.replace("$\\Sigma(\\omega)$", "&Sigma;(&omega;)")
+    s = s.replace("$^{\\circ}$", "&deg;")
+    s = s.replace("\\", "")
+    s = s.replace('"', '\\"')
+    s = s.replace("{", "").replace("}", "")
+    s = s.replace("\t", " ").replace("\n", " ").replace("\r", "")
+    #Ugly hack
+    s = s.replace("1-x","{1-x}")
+    s = s.replace("12-x","{12-x}")
+    s = s.replace("13-x","{13-x}")
+    s = s.replace("$_13$","$_{13}$")
+    s = s.replace("$_0.5$","$_{0.5}$")
+    s = s.replace("$_11.5$","$_{11.5}$")
+    s = s.replace("$_11$","$_{11}$")
+    s = s.replace("$_12.75$","$_{12.75}$")
+    s = s.replace("$_0.25$","$_{0.25}$")
+    s = s.replace("D$_Zn$","D$_{Zn}$")
+    s = s.replace("D$_Te$","D$_{Te}$")
+    s = s.replace("D$_Si$","D$_{Si}$")
+    s = s.replace("D$_Ge$","D$_{Ge}$")
+    s = s.replace("$^-1$","$^{-1}$")
+    s = s.replace("$^-2$","$^{-2}$")
+    s = s.replace("$^-4$","$^{-4}$")
+    s = s.replace("$^-5$","$^{-5}$")
+    s = s.replace("$^1+$","$^{1+}$")
+    s = s.replace("$^2+$","$^{2+}$")
+    s = s.replace("$^+2$","$^{+2}$")
+    s = s.replace("$^3+$","$^{3+}$")
+    s = s.replace("$^+3$","$^{+3}$")
+    s = s.replace("0$_60$","0$_{60}$")
+    s = s.replace("$_1g$","$_{1g}$")
+    s = s.replace("$_2g","$_{2g}")
+    s = s.replace("_2g$","_{2g}$")
+    return s
 
 def clean_bibtex_tags(s, normalize=False):
     """Clean BibTeX keywords and convert to TOML tags"""
