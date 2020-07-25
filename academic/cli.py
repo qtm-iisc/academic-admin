@@ -119,6 +119,41 @@ def import_bibtex(bibtex, pub_dir="publication", featured=False, overwrite=False
         log.error(err)
         raise AcademicError(err)
 
+    log.info(f'Opening file for members and alumni information')
+    member_path = "content/member"
+    member_file = os.path.join(member_path, "member.txt")
+    member_first = []
+    member_last = []
+    member_link = []
+    if Path(member_file).is_file() :
+        with open(member_file, 'r') as file_in:
+            for line in file_in:
+                words = line.rstrip("\n").split()
+                member_link.append(words[0])
+                member_last.append(words[1])
+                member_first.append(words[2])
+    else:
+        err = f"Please check that the member.txt file exists in {member_path}"
+        log.error(err)
+        raise AcademicError(err)
+
+    alumni_path = "content/alumni"
+    alumni_file = os.path.join(alumni_path, "alumni.txt")
+    alumni_first = []
+    alumni_last = []
+    alumni_link = []
+    if Path(alumni_file).is_file() :
+        with open(alumni_file, 'r') as file_in:
+            for line in file_in:
+                words = line.rstrip("\n").split()
+                alumni_link.append(words[0])
+                alumni_last.append(words[1])
+                alumni_first.append(words[2])
+    else:
+        err = f"Please check that the alumni.txt file exists in {alumni_path}"
+        log.error(err)
+        raise AcademicError(err)
+
     # Load BibTeX file for parsing.
     with open(bibtex, "r", encoding="utf-8") as bibtex_file:
         parser = BibTexParser(common_strings=True)
@@ -126,10 +161,10 @@ def import_bibtex(bibtex, pub_dir="publication", featured=False, overwrite=False
         parser.ignore_nonstandard_types = False
         bib_database = bibtexparser.load(bibtex_file, parser=parser)
         for entry in bib_database.entries:
-            parse_bibtex_entry(entry, pub_dir=pub_dir, featured=featured, overwrite=overwrite, normalize=normalize, dry_run=dry_run)
+            parse_bibtex_entry(entry, member_first, member_last, member_link, alumni_first, alumni_last, alumni_link, pub_dir=pub_dir, featured=featured, overwrite=overwrite, normalize=normalize, dry_run=dry_run)
 
 
-def parse_bibtex_entry(entry, pub_dir="publication", featured=False, overwrite=False, normalize=False, dry_run=False):
+def parse_bibtex_entry(entry, member_first, member_last, member_link, alumni_first, alumni_last, alumni_link, pub_dir="publication", featured=False, overwrite=False, normalize=False, dry_run=False):
     """Parse a bibtex entry and generate corresponding publication bundle"""
     log.info(f"Parsing entry {entry['ID']}")
 
@@ -149,9 +184,6 @@ def parse_bibtex_entry(entry, pub_dir="publication", featured=False, overwrite=F
     log.info(f"Creating folder {bundle_path}")
     if not dry_run:
         Path(bundle_path).mkdir(parents=True, exist_ok=True)
-    log.info(f"Creating folder {bundle_path2}")
-    if not dry_run:
-        Path(bundle_path2).mkdir(parents=True, exist_ok=True)
 
     # Save citation file.
     log.info(f"Saving citation to {cite_path}")
@@ -189,10 +221,11 @@ def parse_bibtex_entry(entry, pub_dir="publication", featured=False, overwrite=F
 
     frontmatter.append(f'publication_types =  ["{PUB_TYPES.get(entry["ENTRYTYPE"], 0)}"]')
 
-    abstract_file = cite_path = os.path.join(bundle_path2, f"{slugify(entry['ID'])}.abs")
+    abstract_file = os.path.join(bundle_path2, f"{slugify(entry['ID'])}.abs")
     if "abstract" in entry:
         frontmatter.append(f'abstract =  "{clean_bibtex_str(entry["abstract"])}"')
     elif os.path.exists(abstract_file):
+        log.info(f"Reading abstract from '{abstract_file}'")
         _abstract = ''.join(open(abstract_file, 'r').readlines()).rstrip("\n")
         log.info(f"{clean_abstract_str(_abstract)}")
         frontmatter.append(f'abstract = "{clean_abstract_str(_abstract)}"')
@@ -243,13 +276,20 @@ def parse_bibtex_entry(entry, pub_dir="publication", featured=False, overwrite=F
     elif "editor" in entry:
         authors = entry["editor"]
     if authors:
-        authors = clean_bibtex_authors([i.strip() for i in authors.replace("\n", " ").split(" and ")])
+        authors, member, alumni = clean_bibtex_authors([i.strip() for i in authors.replace("\n", " ").split(" and ")], member_first, member_last, member_link, alumni_first, alumni_last, alumni_link)
         frontmatter.append(f"")
-        for a in authors:
-            frontmatter.append(f"[[authors]]")
-            frontmatter.append(f"    name = {a}")
-            frontmatter.append(f"    is_member = false")
-            frontmatter.append(f"    link = \"\"\n")
+        for i, a in enumerate(authors):
+             frontmatter.append(f"[[authors]]")
+             frontmatter.append(f"    name = {a}")
+             if member[i] == "" and alumni[i] == "":
+                 frontmatter.append(f"    is_member = false")
+                 frontmatter.append(f"    link = \"\"\n")
+             elif alumni[i] == "":
+                 frontmatter.append(f"    is_member = true")
+                 frontmatter.append(f"    link = \"/{member[i]}\"\n")
+             else:
+                 frontmatter.append(f"    is_former_member = true")
+                 frontmatter.append(f"    link = \"/alumni/{alumni[i]}\"\n")
 
     frontmatter.append("+++\n\n")
 
@@ -281,9 +321,11 @@ def slugify(s, lower=True):
     return s
 
 
-def clean_bibtex_authors(author_str):
+def clean_bibtex_authors(author_str,member_first, member_last, member_link, alumni_first, alumni_last, alumni_link):
     """Convert author names to `firstname(s) lastname` format."""
     authors = []
+    member = []
+    alumni = []
     for s in author_str:
         s = s.strip()
         if len(s) < 1:
@@ -302,7 +344,39 @@ def clean_bibtex_authors(author_str):
             if item in ["ben", "van", "der", "de", "la", "le"]:
                 last_name = first_names.pop() + " " + last_name
         authors.append(f'"{" ".join(first_names)} {last_name}"')
-    return authors
+ 
+        # Member matching
+        matched = -1
+        lastnamematch = [i for i, j in enumerate(member_last) if j == last_name]
+        for i in lastnamematch:
+            if first_names[0] == member_first[i]:
+                matched = i
+                break
+            elif first_names[0][0] == member_first[i][0]:
+                matched = i
+                break
+
+        if matched >= 0:
+            member.append(member_link[matched])
+        else:
+            member.append("")
+
+        #Alumni matching
+        matched = -1
+        lastnamematch = [i for i, j in enumerate(alumni_last) if j == last_name]
+        for i in lastnamematch:
+            if first_names[0] == alumni_first[i]:
+                matched = i
+                break
+            elif first_names[0][0] == alumni_first[i][0]:
+                matched = i
+                break
+        if matched >= 0:
+            alumni.append(alumni_link[matched])
+        else:
+            alumni.append("")
+
+    return authors, member, alumni
 
 
 def clean_bibtex_str(s):
