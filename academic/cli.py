@@ -119,6 +119,7 @@ def import_bibtex(bibtex, pub_dir="publication", featured=False, overwrite=False
         log.error(err)
         raise AcademicError(err)
 
+    # Check Member file
     log.info(f'Opening file for members and alumni information')
     member_path = "content/member"
     member_file = os.path.join(member_path, "member.txt")
@@ -137,6 +138,7 @@ def import_bibtex(bibtex, pub_dir="publication", featured=False, overwrite=False
         log.error(err)
         raise AcademicError(err)
 
+    # Check Alumni file
     alumni_path = "content/alumni"
     alumni_file = os.path.join(alumni_path, "alumni.txt")
     alumni_first = []
@@ -151,6 +153,20 @@ def import_bibtex(bibtex, pub_dir="publication", featured=False, overwrite=False
                 alumni_first.append(words[2])
     else:
         err = f"Please check that the alumni.txt file exists in {alumni_path}"
+        log.error(err)
+        raise AcademicError(err)
+
+    # If the directories do not exist, something has gone wrong. Ask the user to
+    # create them. Donot create them from the script.
+    bundle_path = f"content/{pub_dir}"
+    if not os.path.isdir(bundle_path):
+        err = f"Please check that the directory {bundle_path} exists. This is where the markdown files will be stored."
+        log.error(err)
+        raise AcademicError(err)
+
+    bundle_path2 = f"static/bib/{pub_dir}"
+    if not os.path.isdir(bundle_path2):
+        err = f"Please check that the directory {bundle_path2} exists. This is where the bib files will be stored. In addition, the abstract files should also be stored here to put abstract in markdown file."
         log.error(err)
         raise AcademicError(err)
 
@@ -175,15 +191,20 @@ def parse_bibtex_entry(entry, member_first, member_last, member_link, alumni_fir
     date = datetime.utcnow()
     timestamp = date.isoformat("T") + "Z"  # RFC 3339 timestamp.
 
-    # Do not overwrite publication bundle if it already exists.
-    if not overwrite and os.path.isdir(bundle_path):
-        log.warning(f"Skipping creation of {bundle_path} as it already exists. " f"To overwrite, add the `--overwrite` argument.")
+    # Do not overwrite markdown file if it already exists.
+    if not overwrite and Path(markdown_path).is_file() :
+        log.warning(f"Skipping {markdown_path} as it already exists. " f"To overwrite, add the `--overwrite` argument.")
+        return
+    # Do not overwrite bib file if it already exists.
+    if not overwrite and Path(cite_path).is_file() :
+        log.warning(f"Skipping {cite_path} as it already exists. " f"To overwrite, add the `--overwrite` argument.")
         return
 
-    # Create bundle dir.
-    log.info(f"Creating folder {bundle_path}")
-    if not dry_run:
-        Path(bundle_path).mkdir(parents=True, exist_ok=True)
+    # DO NOT CREATE THESE FROM SCRIPT. 
+    ## Create bundle dir. 
+    #log.info(f"Creating folder {bundle_path}")
+    #if not dry_run:
+    #    Path(bundle_path).mkdir(parents=True, exist_ok=True)
 
     # Save citation file.
     log.info(f"Saving citation to {cite_path}")
