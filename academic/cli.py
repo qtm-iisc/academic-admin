@@ -230,7 +230,14 @@ def parse_bibtex_entry(entry, member_first, member_last, member_link, alumni_fir
         elif len(dateparts) == 1:
             year = dateparts[0]
     if "month" in entry and month == "01":
-        month = month2number(entry["month"])
+        words = entry["month"].split("~")
+        #if len(_temp)>3:
+        month = month2number(words[0])
+        if len(words) == 2:
+            day = words[1]
+        elif len(words) > 2:
+            log.error(f'month read as {words}')
+            raise AcademicError(f'There are more things in month than what I know what to do with')
     if "year" in entry and year == "":
         year = entry["year"]
     if len(year) == 0:
@@ -265,18 +272,19 @@ def parse_bibtex_entry(entry, member_first, member_last, member_link, alumni_fir
     if "editor" in entry:
         _editor = entry["editor"]
         editors = clean_bibtex_editors([i.strip() for i in _editor.replace("\n", " ").split(" and ")])
-        log.info(f'{editors}')
         editor = ', '.join(editors)
         # Now replace the last occurance of , with and
         # Reverse the string, replace first occurance of , with dna and reverse it back
         editor = editor[::-1].replace(',', 'dna ', 1)[::-1]
-        log.info(f'{editor}')
     publisher = ""
     if "publisher" in entry:
         publisher = entry["publisher"]
     series = ""
     if "series" in entry:
         series = entry["series"]
+    note = ""
+    if "note" in entry:
+        note = clean_bibtex_str(entry["note"])
 
     # Publication name.
     if entry["ENTRYTYPE"] == "article":
@@ -306,6 +314,8 @@ def parse_bibtex_entry(entry, member_first, member_last, member_link, alumni_fir
              _temp = "".join((_temp, f", vol. {vol}"))
         _temp = "".join((_temp, f", {pages} ({year})."))
         frontmatter.append(f'publication = "{_temp}"')
+    elif entry["ENTRYTYPE"] == "misc":
+        frontmatter.append(f'publication = "{note} ({day}/{month}/{year})."')
     else:
         frontmatter.append('publication =  ""')
 
