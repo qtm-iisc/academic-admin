@@ -261,17 +261,51 @@ def parse_bibtex_entry(entry, member_first, member_last, member_link, alumni_fir
     pages = ""
     if "pages" in entry:
         pages = entry["pages"]
+    editor = ""
+    if "editor" in entry:
+        _editor = entry["editor"]
+        editors = clean_bibtex_editors([i.strip() for i in _editor.replace("\n", " ").split(" and ")])
+        log.info(f'{editors}')
+        editor = ', '.join(editors)
+        # Now replace the last occurance of , with and
+        # Reverse the string, replace first occurance of , with dna and reverse it back
+        editor = editor[::-1].replace(',', 'dna ', 1)[::-1]
+        log.info(f'{editor}')
+    publisher = ""
+    if "publisher" in entry:
+        publisher = entry["publisher"]
+    series = ""
+    if "series" in entry:
+        series = entry["series"]
 
     # Publication name.
-    if "booktitle" in entry:
-        frontmatter.append(f'publication = "*{clean_bibtex_str(entry["booktitle"])}*"')
-    elif "journal" in entry:
+    if entry["ENTRYTYPE"] == "article":
         if len(vol) == 0:
              frontmatter.append(f'publication = "{clean_bibtex_str(entry["journal"])} {pages} ({year})."')
         else:
              frontmatter.append(f'publication = "{clean_bibtex_str(entry["journal"])} **{vol}**, {pages} ({year})."')
-    elif "publisher" in entry:
-        frontmatter.append(f'publication = "*{clean_bibtex_str(entry["publisher"])}*"')
+    elif entry["ENTRYTYPE"] == "inproceedings":
+        _temp = f'in *{clean_bibtex_str(entry["booktitle"])}*'
+        if len(editor) != 0:
+             _temp = "".join((_temp, f", edited by {editor}"))
+        if len(publisher) != 0:
+             _temp = "".join((_temp, f" ({publisher})"))
+        if len(vol) != 0:
+             _temp = "".join((_temp, f", vol. {vol}"))
+        _temp = "".join((_temp, f", {pages} ({year})."))
+        frontmatter.append(f'publication = "{_temp}"')
+    elif entry["ENTRYTYPE"] == "incollection":
+        _temp = f'in *{clean_bibtex_str(entry["booktitle"])}*'
+        if len(series) != 0:
+             _temp = "".join((_temp, f", *{series}*"))
+        if len(editor) != 0:
+             _temp = "".join((_temp, f", edited by {editor}"))
+        if len(publisher) != 0:
+             _temp = "".join((_temp, f", ({publisher})"))
+        if len(vol) != 0:
+             _temp = "".join((_temp, f", vol. {vol}"))
+        _temp = "".join((_temp, f", {pages} ({year})."))
+        frontmatter.append(f'publication = "{_temp}"')
     else:
         frontmatter.append('publication =  ""')
 
@@ -294,6 +328,7 @@ def parse_bibtex_entry(entry, member_first, member_last, member_link, alumni_fir
     authors = None
     if "author" in entry:
         authors = entry["author"]
+    # Go here only if author is not matched.
     elif "editor" in entry:
         authors = entry["editor"]
     if authors:
@@ -398,6 +433,30 @@ def clean_bibtex_authors(author_str,member_first, member_last, member_link, alum
             alumni.append("")
 
     return authors, member, alumni
+
+def clean_bibtex_editors(editor_str):
+    """Convert editor names to `firstname(s) lastname` format."""
+    editors = []
+    for s in editor_str:
+        s = s.strip()
+        if len(s) < 1:
+            continue
+        if "," in s:
+            split_names = s.split(",", 1)
+            last_name = split_names[0].strip()
+            first_names = [i.strip() for i in split_names[1].split()]
+        else:
+            split_names = s.split()
+            last_name = split_names.pop()
+            first_names = [i.replace(".", ". ").strip() for i in split_names]
+        if last_name in ["jnr", "jr", "junior"]:
+            last_name = first_names.pop()
+        for item in first_names:
+            if item in ["ben", "van", "der", "de", "la", "le"]:
+                last_name = first_names.pop() + " " + last_name
+        editors.append(f'{" ".join(first_names)} {last_name}')
+ 
+    return editors
 
 
 def clean_bibtex_str(s):
