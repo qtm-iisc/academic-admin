@@ -484,6 +484,7 @@ def clean_abstract_str(s):
     s = s.replace("{\\em ab initio}", "*ab initio*")
     s = s.replace("{\\em Ab initio}", "*Ab initio*")
     s = s.replace("{\\em all}", "*all*")
+    s = s.replace("{\\em both}", "*both*")
     s = s.replace("{\\em effective}", "*effective*")
     s = s.replace("\\texttt{BerkeleyGW}", "<TT>BerkeleyGW</TT>")
     s = s.replace("\\texttt{PARATEC}", "<TT>PARATEC</TT>")
